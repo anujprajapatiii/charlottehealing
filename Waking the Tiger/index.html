@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Waking the Tiger - Skills & Practices</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <button class="bell-button" id="bellButton" aria-label="Ring meditation bell">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path>
+            <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path>
+        </svg>
+    </button>
+
+    <div class="container">
+        <header>
+            <div class="header-banner">
+                <img src="banner.webp" alt="Meditation" class="banner-image">
+            </div>
+            <h1>Waking the Tiger</h1>
+            <p class="subtitle">Healing Trauma Skills & Practices</p>
+        </header>
+
+        <div class="controls">
+            <div class="search-box">
+                <input
+                    type="text"
+                    id="searchInput"
+                    placeholder="Search skills and practices..."
+                    autocomplete="off"
+                >
+            </div>
+            <div class="filter-buttons">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="concept">Concepts</button>
+                <button class="filter-btn" data-filter="exercise">Exercises</button>
+                <button class="filter-btn" data-filter="symptom">Symptoms</button>
+                <button class="filter-btn" data-filter="principle">Principles</button>
+            </div>
+        </div>
+
+        <div class="gallery" id="cardGallery">
+            <!-- Cards will be injected here by JavaScript -->
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
