@@ -529,6 +529,17 @@ header h1 {
     border-color: var(--color-text-secondary);
 }
 
+/* Bell Shimmer Shader Overlay */
+.shimmer-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 999;
+}
+
 /* Smooth scroll behavior */
 html {
     scroll-behavior: smooth;

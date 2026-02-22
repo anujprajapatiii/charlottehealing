@@ -362,6 +362,190 @@ let searchTerm = '';
 let currentAudio = null;
 let currentButton = null;
 
+// Bell Shimmer Shader - WebGL prismatic green radial effect
+function createBellShimmer(bellElement) {
+    // Remove any existing shimmer canvas
+    const existing = document.querySelector('.shimmer-canvas');
+    if (existing) existing.remove();
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'shimmer-canvas';
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
+    canvas.style.width = window.innerWidth + 'px';
+    canvas.style.height = window.innerHeight + 'px';
+    document.body.appendChild(canvas);
+
+    const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false });
+    if (!gl) {
+        canvas.remove();
+        return;
+    }
+
+    const vertSrc = `
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    `;
+
+    const fragSrc = `
+        precision highp float;
+        uniform vec2 u_resolution;
+        uniform float u_time;
+        uniform vec2 u_bell;
+
+        void main() {
+            vec2 uv = gl_FragCoord.xy / u_resolution;
+            vec2 bell = u_bell / u_resolution;
+
+            // Aspect-corrected distance from bell
+            vec2 delta = uv - bell;
+            delta.x *= u_resolution.x / u_resolution.y;
+            float dist = length(delta);
+            float angle = atan(delta.y, delta.x);
+
+            // Expanding wave front
+            float speed = 0.45;
+            float waveFront = u_time * speed;
+            float behindWave = smoothstep(waveFront + 0.03, waveFront - 0.25, dist);
+
+            // Multiple concentric ring layers at different speeds for prismatic separation
+            float phase = dist * 28.0 - u_time * 14.0;
+            float ring1 = sin(phase) * 0.5 + 0.5;
+            float ring2 = sin(phase * 1.2 + 1.3) * 0.5 + 0.5;
+            float ring3 = sin(phase * 0.8 + 2.7) * 0.5 + 0.5;
+
+            // Prismatic green color palette - varies by angle and distance
+            float hue = angle * 0.4 + dist * 5.0 + u_time * 1.5;
+
+            vec3 emerald  = vec3(0.10, 0.85, 0.42);
+            vec3 teal     = vec3(0.05, 0.78, 0.68);
+            vec3 mint     = vec3(0.35, 0.95, 0.65);
+            vec3 jade     = vec3(0.08, 0.70, 0.48);
+
+            float t1 = sin(hue) * 0.5 + 0.5;
+            float t2 = sin(hue + 2.094) * 0.5 + 0.5;
+            float t3 = sin(hue + 4.189) * 0.5 + 0.5;
+
+            vec3 color = emerald * ring1 * t1
+                       + teal * ring2 * t2
+                       + mint * ring3 * t3;
+            color = color / (t1 + t2 + t3 + 0.001);
+
+            // High-frequency shimmer sparkle
+            float sparkle = sin(dist * 120.0 + angle * 7.0 - u_time * 18.0);
+            sparkle = pow(max(sparkle, 0.0), 16.0);
+            color += sparkle * mint * 0.6;
+
+            // Bright leading edge of the wave
+            float edgeDist = abs(dist - waveFront);
+            float edge = exp(-edgeDist * 25.0) * 0.8;
+            color += edge * mix(emerald, mint, sin(angle * 3.0 + u_time * 4.0) * 0.5 + 0.5);
+
+            // Ring intensity
+            float rings = ring1 * 0.45 + ring2 * 0.35 + ring3 * 0.20;
+            rings = pow(rings, 1.5);
+
+            // Distance fade - effect weakens further from bell
+            float distFade = exp(-dist * 1.0);
+
+            // Animation envelope: quick fade-in, sustain, gradual fade-out
+            float duration = 3.5;
+            float fadeIn = smoothstep(0.0, 0.15, u_time);
+            float fadeOut = smoothstep(duration, duration - 1.8, u_time);
+            float envelope = fadeIn * fadeOut;
+
+            float alpha = (rings * 0.7 + sparkle * 0.3 + edge * 0.5)
+                        * behindWave * distFade * envelope * 0.30;
+
+            gl_FragColor = vec4(color, alpha);
+        }
+    `;
+
+    // Compile shader helper
+    function compileShader(type, src) {
+        const shader = gl.createShader(type);
+        gl.shaderSource(shader, src);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
+    }
+
+    const vs = compileShader(gl.VERTEX_SHADER, vertSrc);
+    const fs = compileShader(gl.FRAGMENT_SHADER, fragSrc);
+    if (!vs || !fs) {
+        canvas.remove();
+        return;
+    }
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        canvas.remove();
+        return;
+    }
+    gl.useProgram(program);
+
+    // Full-screen quad
+    const buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, -1,  1, -1,  -1, 1,
+         1, -1,  1,  1,  -1, 1
+    ]), gl.STATIC_DRAW);
+
+    const aPos = gl.getAttribLocation(program, 'a_position');
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+    // Uniform locations
+    const uRes = gl.getUniformLocation(program, 'u_resolution');
+    const uTime = gl.getUniformLocation(program, 'u_time');
+    const uBell = gl.getUniformLocation(program, 'u_bell');
+
+    // Bell center position in GL coordinates (y-flipped)
+    const rect = bellElement.getBoundingClientRect();
+    const bellX = (rect.left + rect.width / 2) * dpr;
+    const bellY = canvas.height - (rect.top + rect.height / 2) * dpr;
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    const startTime = performance.now();
+    const totalDuration = 3500;
+
+    function render() {
+        const elapsed = (performance.now() - startTime) / 1000;
+
+        if (elapsed > 3.5) {
+            canvas.remove();
+            return;
+        }
+
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.uniform2f(uRes, canvas.width, canvas.height);
+        gl.uniform1f(uTime, elapsed);
+        gl.uniform2f(uBell, bellX, bellY);
+
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        requestAnimationFrame(render);
+    }
+
+    render();
+}
+
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
     renderCards();
@@ -398,6 +582,7 @@ function setupEventListeners() {
         bellAudio.play();
         bellButton.classList.add('ringing');
         setTimeout(() => bellButton.classList.remove('ringing'), 300);
+        createBellShimmer(bellButton);
     });
 }
 
