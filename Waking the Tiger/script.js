@@ -378,99 +378,96 @@ function createBellShimmer(bellElement) {
     canvas.style.height = window.innerHeight + 'px';
     document.body.appendChild(canvas);
 
-    const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false });
+    // Try webgl2 first, fall back to webgl
+    const glOpts = { alpha: true, premultipliedAlpha: true };
+    const gl = canvas.getContext('webgl2', glOpts) || canvas.getContext('webgl', glOpts);
     if (!gl) {
+        // CSS fallback for no WebGL support
+        createBellShimmerFallback(bellElement);
         canvas.remove();
         return;
     }
 
-    const vertSrc = `
-        attribute vec2 a_position;
-        void main() {
-            gl_Position = vec4(a_position, 0.0, 1.0);
-        }
-    `;
+    const vertSrc = [
+        'attribute vec2 a_position;',
+        'void main() {',
+        '    gl_Position = vec4(a_position, 0.0, 1.0);',
+        '}'
+    ].join('\n');
 
-    const fragSrc = `
-        precision highp float;
-        uniform vec2 u_resolution;
-        uniform float u_time;
-        uniform vec2 u_bell;
+    const fragSrc = [
+        'precision mediump float;',
+        'uniform vec2 u_resolution;',
+        'uniform float u_time;',
+        'uniform vec2 u_bell;',
+        '',
+        'void main() {',
+        '    vec2 uv = gl_FragCoord.xy / u_resolution;',
+        '    vec2 bell = u_bell / u_resolution;',
+        '',
+        '    vec2 delta = uv - bell;',
+        '    delta.x *= u_resolution.x / u_resolution.y;',
+        '    float dist = length(delta);',
+        '    float angle = atan(delta.y, delta.x);',
+        '',
+        '    float speed = 0.45;',
+        '    float waveFront = u_time * speed;',
+        '    float behindWave = smoothstep(waveFront + 0.03, waveFront - 0.25, dist);',
+        '',
+        '    float phase = dist * 28.0 - u_time * 14.0;',
+        '    float ring1 = sin(phase) * 0.5 + 0.5;',
+        '    float ring2 = sin(phase * 1.2 + 1.3) * 0.5 + 0.5;',
+        '    float ring3 = sin(phase * 0.8 + 2.7) * 0.5 + 0.5;',
+        '',
+        '    float hue = angle * 0.4 + dist * 5.0 + u_time * 1.5;',
+        '',
+        '    vec3 emerald  = vec3(0.10, 0.85, 0.42);',
+        '    vec3 teal     = vec3(0.05, 0.78, 0.68);',
+        '    vec3 mint     = vec3(0.35, 0.95, 0.65);',
+        '    vec3 jade     = vec3(0.08, 0.70, 0.48);',
+        '',
+        '    float t1 = sin(hue) * 0.5 + 0.5;',
+        '    float t2 = sin(hue + 2.094) * 0.5 + 0.5;',
+        '    float t3 = sin(hue + 4.189) * 0.5 + 0.5;',
+        '',
+        '    vec3 color = emerald * ring1 * t1',
+        '               + teal * ring2 * t2',
+        '               + mint * ring3 * t3;',
+        '    color = color / (t1 + t2 + t3 + 0.001);',
+        '',
+        '    float sparkle = sin(dist * 120.0 + angle * 7.0 - u_time * 18.0);',
+        '    sparkle = pow(max(sparkle, 0.0), 16.0);',
+        '    color += sparkle * mint * 0.6;',
+        '',
+        '    float edgeDist = abs(dist - waveFront);',
+        '    float edge = exp(-edgeDist * 25.0) * 0.8;',
+        '    color += edge * mix(emerald, mint, sin(angle * 3.0 + u_time * 4.0) * 0.5 + 0.5);',
+        '',
+        '    float rings = ring1 * 0.45 + ring2 * 0.35 + ring3 * 0.20;',
+        '    rings = pow(rings, 1.5);',
+        '',
+        '    float distFade = exp(-dist * 1.0);',
+        '',
+        '    float dur = 3.5;',
+        '    float fadeIn = smoothstep(0.0, 0.15, u_time);',
+        '    float fadeOut = smoothstep(dur, dur - 1.8, u_time);',
+        '    float envelope = fadeIn * fadeOut;',
+        '',
+        '    float a = (rings * 0.7 + sparkle * 0.3 + edge * 0.5)',
+        '            * behindWave * distFade * envelope * 0.30;',
+        '',
+        '    // Premultiplied alpha output',
+        '    gl_FragColor = vec4(color * a, a);',
+        '}'
+    ].join('\n');
 
-        void main() {
-            vec2 uv = gl_FragCoord.xy / u_resolution;
-            vec2 bell = u_bell / u_resolution;
-
-            // Aspect-corrected distance from bell
-            vec2 delta = uv - bell;
-            delta.x *= u_resolution.x / u_resolution.y;
-            float dist = length(delta);
-            float angle = atan(delta.y, delta.x);
-
-            // Expanding wave front
-            float speed = 0.45;
-            float waveFront = u_time * speed;
-            float behindWave = smoothstep(waveFront + 0.03, waveFront - 0.25, dist);
-
-            // Multiple concentric ring layers at different speeds for prismatic separation
-            float phase = dist * 28.0 - u_time * 14.0;
-            float ring1 = sin(phase) * 0.5 + 0.5;
-            float ring2 = sin(phase * 1.2 + 1.3) * 0.5 + 0.5;
-            float ring3 = sin(phase * 0.8 + 2.7) * 0.5 + 0.5;
-
-            // Prismatic green color palette - varies by angle and distance
-            float hue = angle * 0.4 + dist * 5.0 + u_time * 1.5;
-
-            vec3 emerald  = vec3(0.10, 0.85, 0.42);
-            vec3 teal     = vec3(0.05, 0.78, 0.68);
-            vec3 mint     = vec3(0.35, 0.95, 0.65);
-            vec3 jade     = vec3(0.08, 0.70, 0.48);
-
-            float t1 = sin(hue) * 0.5 + 0.5;
-            float t2 = sin(hue + 2.094) * 0.5 + 0.5;
-            float t3 = sin(hue + 4.189) * 0.5 + 0.5;
-
-            vec3 color = emerald * ring1 * t1
-                       + teal * ring2 * t2
-                       + mint * ring3 * t3;
-            color = color / (t1 + t2 + t3 + 0.001);
-
-            // High-frequency shimmer sparkle
-            float sparkle = sin(dist * 120.0 + angle * 7.0 - u_time * 18.0);
-            sparkle = pow(max(sparkle, 0.0), 16.0);
-            color += sparkle * mint * 0.6;
-
-            // Bright leading edge of the wave
-            float edgeDist = abs(dist - waveFront);
-            float edge = exp(-edgeDist * 25.0) * 0.8;
-            color += edge * mix(emerald, mint, sin(angle * 3.0 + u_time * 4.0) * 0.5 + 0.5);
-
-            // Ring intensity
-            float rings = ring1 * 0.45 + ring2 * 0.35 + ring3 * 0.20;
-            rings = pow(rings, 1.5);
-
-            // Distance fade - effect weakens further from bell
-            float distFade = exp(-dist * 1.0);
-
-            // Animation envelope: quick fade-in, sustain, gradual fade-out
-            float duration = 3.5;
-            float fadeIn = smoothstep(0.0, 0.15, u_time);
-            float fadeOut = smoothstep(duration, duration - 1.8, u_time);
-            float envelope = fadeIn * fadeOut;
-
-            float alpha = (rings * 0.7 + sparkle * 0.3 + edge * 0.5)
-                        * behindWave * distFade * envelope * 0.30;
-
-            gl_FragColor = vec4(color, alpha);
-        }
-    `;
-
-    // Compile shader helper
+    // Compile shader helper with error logging
     function compileShader(type, src) {
         const shader = gl.createShader(type);
         gl.shaderSource(shader, src);
         gl.compileShader(shader);
         if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.warn('Bell shimmer shader compile error:', gl.getShaderInfoLog(shader));
             gl.deleteShader(shader);
             return null;
         }
@@ -480,6 +477,7 @@ function createBellShimmer(bellElement) {
     const vs = compileShader(gl.VERTEX_SHADER, vertSrc);
     const fs = compileShader(gl.FRAGMENT_SHADER, fragSrc);
     if (!vs || !fs) {
+        createBellShimmerFallback(bellElement);
         canvas.remove();
         return;
     }
@@ -489,12 +487,14 @@ function createBellShimmer(bellElement) {
     gl.attachShader(program, fs);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.warn('Bell shimmer program link error:', gl.getProgramInfoLog(program));
+        createBellShimmerFallback(bellElement);
         canvas.remove();
         return;
     }
     gl.useProgram(program);
 
-    // Full-screen quad
+    // Full-screen quad (two triangles)
     const buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
@@ -516,11 +516,11 @@ function createBellShimmer(bellElement) {
     const bellX = (rect.left + rect.width / 2) * dpr;
     const bellY = canvas.height - (rect.top + rect.height / 2) * dpr;
 
+    // Premultiplied alpha blending
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     const startTime = performance.now();
-    const totalDuration = 3500;
 
     function render() {
         const elapsed = (performance.now() - startTime) / 1000;
@@ -544,6 +544,39 @@ function createBellShimmer(bellElement) {
     }
 
     render();
+}
+
+// CSS-only fallback when WebGL is not available
+function createBellShimmerFallback(bellElement) {
+    const rect = bellElement.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    const maxRadius = Math.max(window.innerWidth, window.innerHeight) * 1.5;
+
+    const ring = document.createElement('div');
+    ring.className = 'shimmer-fallback';
+    ring.style.cssText = [
+        'position: fixed',
+        'border-radius: 50%',
+        'pointer-events: none',
+        'z-index: 999',
+        'left: ' + centerX + 'px',
+        'top: ' + centerY + 'px',
+        'width: 0',
+        'height: 0',
+        'transform: translate(-50%, -50%)',
+        'box-shadow: 0 0 60px 30px rgba(30, 200, 120, 0.3), 0 0 120px 60px rgba(10, 180, 140, 0.15)',
+        'transition: width 3s ease-out, height 3s ease-out, opacity 2.5s ease-in 1s'
+    ].join(';');
+    document.body.appendChild(ring);
+
+    requestAnimationFrame(() => {
+        ring.style.width = maxRadius * 2 + 'px';
+        ring.style.height = maxRadius * 2 + 'px';
+        ring.style.opacity = '0';
+    });
+
+    setTimeout(() => ring.remove(), 3500);
 }
 
 // Initialize
